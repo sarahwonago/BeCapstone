@@ -1,5 +1,10 @@
 from django.db import models
 from django.conf import settings
+from .utils import (
+    validate_file_size,
+    validate_file_type,
+    sanitize_filename,
+)
 
 
 class Course(models.Model):
@@ -200,9 +205,13 @@ class IssueHistory(models.Model):
         verbose_name_plural = "Issue histories"
 
 
+# Update the issue_attachment_path function
 def issue_attachment_path(instance, filename):
-    """Define upload path for issue attachments"""
-    return f"attachments/issues/{instance.issue.id}/{filename}"
+    """Define upload path for issue attachments with sanitization"""
+    from .utils import sanitize_filename
+
+    clean_filename = sanitize_filename(filename)
+    return f"attachments/issues/{instance.issue.id}/{clean_filename}"
 
 
 class Attachment(models.Model):
@@ -211,7 +220,13 @@ class Attachment(models.Model):
     issue = models.ForeignKey(
         Issue, on_delete=models.CASCADE, related_name="attachments"
     )
-    file = models.FileField(upload_to=issue_attachment_path)
+    file = models.FileField(
+        upload_to=issue_attachment_path,
+        validators=[
+            validate_file_size,
+            validate_file_type,
+        ],
+    )
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -219,14 +234,34 @@ class Attachment(models.Model):
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     file_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100, blank=True)  # Store MIME type
+    file_size = models.PositiveIntegerField(default=0)  # Store file size in bytes
 
     def __str__(self):
         return f"Attachment for Issue #{self.issue.id}: {self.file_name}"
 
     def save(self, *args, **kwargs):
+        # Set the file_name if not already set
         if not self.file_name and self.file:
             self.file_name = self.file.name
+
+        # Store file size
+        if self.file and hasattr(self.file, "size"):
+            self.file_size = self.file.size
+
+        # Store content type
+        if self.file and hasattr(self.file, "content_type"):
+            self.content_type = self.file.content_type
+
         super().save(*args, **kwargs)
+
+    def clean(self):
+        # Additional validation that calls our custom validators
+        if self.file:
+            from .utils import validate_file_size, validate_file_type
+
+            validate_file_size(self.file)
+            validate_file_type(self.file)
 
 
 class IssueTemplate(models.Model):
