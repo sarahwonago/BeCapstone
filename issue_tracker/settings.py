@@ -3,6 +3,7 @@ from decouple import config
 from datetime import timedelta
 
 import os
+from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -202,3 +203,67 @@ SPECTACULAR_SETTINGS = {
     ],
     "SERVERS": [{"url": "/api", "description": "Current API server"}],
 }
+
+# Add media settings
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+# File upload settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+FILE_UPLOAD_PERMISSIONS = 0o644
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
+
+# Allowed file extensions and MIME types
+ALLOWED_FILE_EXTENSIONS = [
+    # Images
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+    "svg",
+    # Documents
+    "pdf",
+    "doc",
+    "docx",
+    "txt",
+    "rtf",
+    "odt",
+    # Code and logs
+    "py",
+    "js",
+    "html",
+    "css",
+    "json",
+    "log",
+    "txt",
+    # Archives
+    "zip",
+]
+
+ALLOWED_MIME_TYPES = [
+    # Images
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/bmp",
+    "image/svg+xml",
+    # Documents
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "application/rtf",
+    "application/vnd.oasis.opendocument.text",
+    # Code and logs
+    "text/x-python",
+    "application/javascript",
+    "text/html",
+    "text/css",
+    "application/json",
+    # Archives
+    "application/zip",
+]
+
+# Maximum file upload size (5MB)
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024
