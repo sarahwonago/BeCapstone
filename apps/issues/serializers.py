@@ -116,9 +116,11 @@ class AttachmentSerializer(serializers.ModelSerializer):
     Serializer for Attachment model.
     """
 
+    file_url = serializers.SerializerMethodField()
     uploaded_by_username = serializers.CharField(
         source="uploaded_by.username", read_only=True
     )
+    file_size_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
@@ -126,12 +128,71 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "id",
             "issue",
             "file",
+            "file_url",
             "file_name",
+            "content_type",
+            "file_size",
+            "file_size_display",
             "uploaded_by",
             "uploaded_by_username",
             "uploaded_at",
         ]
-        read_only_fields = ["uploaded_at", "uploaded_by_username", "file_name"]
+        read_only_fields = [
+            "uploaded_at",
+            "uploaded_by_username",
+            "file_name",
+            "file_url",
+            "content_type",
+            "file_size",
+            "file_size_display",
+        ]
+        extra_kwargs = {
+            "file": {"write_only": True}  # Hide actual file path in response
+        }
+
+    def get_file_url(self, obj):
+        """Return the URL to download the file"""
+        if obj.file:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+        return None
+
+    def get_file_size_display(self, obj):
+        """Return human-readable file size"""
+        size_bytes = obj.file_size
+
+        # Handle edge cases
+        if size_bytes < 0:
+            return "0 bytes"
+
+        # Define size units
+        units = ["bytes", "KB", "MB", "GB", "TB"]
+        size = float(size_bytes)
+        unit_index = 0
+
+        # Find the appropriate unit
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+
+        # Format with 2 decimal places if not bytes
+        if unit_index == 0:
+            return f"{int(size)} {units[unit_index]}"
+        else:
+            return f"{size:.2f} {units[unit_index]}"
+
+    def validate_file(self, file):
+        """Validate the uploaded file"""
+        from .utils import validate_file_size, validate_file_type
+
+        # Validate file size
+        validate_file_size(file)
+
+        # Validate file type
+        validate_file_type(file)
+
+        return file
 
     def create(self, validated_data):
         # Set the uploaded_by to the current user
