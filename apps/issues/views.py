@@ -1,9 +1,10 @@
-from rest_framework import viewsets, permissions, status, filters
+from rest_framework import viewsets, permissions, status, filters, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.core.exceptions import PermissionDenied
 from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
@@ -11,6 +12,7 @@ from drf_spectacular.utils import (
     OpenApiResponse,
 )
 from drf_spectacular.types import OpenApiTypes
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from .models import (
     Course,
@@ -909,22 +911,28 @@ class CommentViewSet(viewsets.ModelViewSet):
     ),
     create=extend_schema(
         summary="Upload an attachment",
-        description="Upload a file attachment for an issue.",
+        description="Upload a file attachment for an issue. File size limit is 5MB. Allowed file types include images (jpg, png, gif), documents (pdf, doc, docx, txt), and code files.",
         responses={
             201: AttachmentSerializer,
             400: OpenApiResponse(description="Bad request - invalid data or file."),
             401: OpenApiResponse(
                 description="Authentication credentials were not provided."
             ),
+            413: OpenApiResponse(
+                description="File size exceeds the maximum allowed size."
+            ),
         },
     ),
     retrieve=extend_schema(
         summary="Retrieve an attachment",
-        description="Retrieve a specific attachment.",
+        description="Retrieve attachment details. The actual file can be downloaded using the file_url property.",
         responses={
             200: AttachmentSerializer,
             401: OpenApiResponse(
                 description="Authentication credentials were not provided."
+            ),
+            403: OpenApiResponse(
+                description="You do not have permission to access this attachment."
             ),
             404: OpenApiResponse(description="Attachment not found."),
         },
@@ -953,7 +961,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     serializer_class = AttachmentSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["issue", "uploaded_by"]
-    ordering_fields = ["uploaded_at"]
+    ordering_fields = ["uploaded_at", "file_size"]
     ordering = ["-uploaded_at"]
     http_method_names = [
         "get",
@@ -962,12 +970,13 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         "head",
         "options",
     ]  # No update methods
+    parser_classes = [MultiPartParser, FormParser]  # For file uploads
 
     def get_queryset(self):
         user = self.request.user
         queryset = super().get_queryset()
 
-        # Students can only see attachments on their own issues
+        # Students can only see attachments on their own issues or that they uploaded
         if user.is_student():
             queryset = queryset.filter(Q(issue__reported_by=user) | Q(uploaded_by=user))
 
@@ -985,7 +994,75 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user)
+        """Set the current user as uploader and validate issue access"""
+        issue_id = self.request.data.get("issue")
+        if not issue_id:
+            raise serializers.ValidationError({"issue": "Issue ID is required."})
+
+        # Check if issue exists and user has access
+        try:
+            issue = Issue.objects.get(pk=issue_id)
+        except Issue.DoesNotExist:
+            raise serializers.ValidationError({"issue": "Issue does not exist."})
+
+        # Check permissions
+        user = self.request.user
+
+        # Students can only attach files to their own issues
+        if user.is_student() and issue.reported_by != user:
+            raise PermissionDenied("You can only attach files to your own issues.")
+
+        # Mentors can only attach files to issues in their cohort
+        if user.is_mentor() and issue.cohort != user.cohort:
+            raise PermissionDenied(
+                "You can only attach files to issues in your cohort."
+            )
+
+        serializer.save(uploaded_by=user)
+
+    @extend_schema(
+        summary="Download an attachment",
+        description="Download the actual file attachment.",
+        responses={
+            200: OpenApiResponse(description="File will be downloaded."),
+            401: OpenApiResponse(
+                description="Authentication credentials were not provided."
+            ),
+            403: OpenApiResponse(
+                description="You do not have permission to access this file."
+            ),
+            404: OpenApiResponse(description="File not found."),
+        },
+    )
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """
+        Download the attachment file directly.
+        """
+        attachment = self.get_object()
+
+        # Check if file exists
+        if not attachment.file or not os.path.exists(attachment.file.path):
+            return Response(
+                {"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generate a response with the file
+        file_path = attachment.file.path
+        file_name = attachment.file_name
+        content_type = attachment.content_type or "application/octet-stream"
+
+        response = FileResponse(
+            open(file_path, "rb"),
+            content_type=content_type,
+            as_attachment=True,
+            filename=file_name,
+        )
+
+        # Add Content-Length header
+        response["Content-Length"] = os.path.getsize(file_path)
+
+        return response
 
 
 @extend_schema_view(
