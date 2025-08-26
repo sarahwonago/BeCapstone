@@ -18,6 +18,7 @@ urlpatterns = [
                 # App-specific endpoints
                 path("", include("apps.users.urls")),
                 path("", include("apps.issues.urls")),
+                path("", include("apps.notifications.urls")),
                 # API schema and documentation
                 path("schema/", SpectacularAPIView.as_view(), name="schema"),
                 path(
