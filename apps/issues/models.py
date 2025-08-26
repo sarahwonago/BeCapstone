@@ -149,6 +149,24 @@ class Issue(models.Model):
             models.Index(fields=["created_at"]),
         ]
 
+    def save(self, *args, **kwargs):
+        # Update resolved_at when status changes to RESOLVED
+        if self.pk:
+            old_instance = Issue.objects.filter(pk=self.pk).first()
+            if old_instance and old_instance.status != self.status:
+                if self.status == self.RESOLVED:
+                    from django.utils import timezone
+
+                    self.resolved_at = timezone.now()
+
+                # If changing to IN_PROGRESS and first_response_at is not set
+                if self.status == self.IN_PROGRESS and not self.first_response_at:
+                    from django.utils import timezone
+
+                    self.first_response_at = timezone.now()
+
+        super().save(*args, **kwargs)
+
 
 class Comment(models.Model):
     """Model for comments on issues"""
