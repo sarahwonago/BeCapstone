@@ -11,7 +11,6 @@ from drf_spectacular.utils import (
 
 from .models import Notification
 from .serializers import NotificationSerializer
-from apps.users.permissions import IsOwnerOrAdmin
 
 
 @extend_schema_view(
