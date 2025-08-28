@@ -754,6 +754,78 @@ class IssueViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        summary="Convert to Knowledge Base article",
+        description="Convert a resolved issue to a Knowledge Base article. Only accessible to mentors and admins.",
+        request=serializers.Serializer(
+            {
+                "title": serializers.CharField(),
+                "content": serializers.CharField(),
+                "tags": serializers.CharField(required=False),
+            }
+        ),
+        responses={
+            201: OpenApiResponse(
+                description="Knowledge base article created successfully."
+            ),
+            400: OpenApiResponse(
+                description="Bad request - issue not resolved or invalid data."
+            ),
+            401: OpenApiResponse(
+                description="Authentication credentials were not provided."
+            ),
+            403: OpenApiResponse(
+                description="You do not have permission to perform this action."
+            ),
+            404: OpenApiResponse(description="Issue not found."),
+        },
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated, IsMentorOrAdmin],
+    )
+    def convert_to_kb(self, request, pk=None):
+        """
+        Convert a resolved issue to a Knowledge Base article.
+        """
+        issue = self.get_object()
+
+        # Check if issue is resolved
+        if issue.status != Issue.RESOLVED:
+            return Response(
+                {
+                    "detail": "Only resolved issues can be converted to Knowledge Base articles."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Create KB article
+        from apps.kb.models import KnowledgeBaseArticle
+        from apps.kb.serializers import KnowledgeBaseArticleSerializer
+
+        kb_data = {
+            "title": request.data.get("title", f"KB: {issue.title}"),
+            "content": request.data.get("content", issue.description),
+            "related_issue": issue.id,
+            "tags": request.data.get("tags", ""),
+            "created_by": request.user.id,
+        }
+
+        serializer = KnowledgeBaseArticleSerializer(
+            data=kb_data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        kb_article = serializer.save()
+
+        return Response(
+            {
+                "detail": "Knowledge base article created successfully.",
+                "id": kb_article.id,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 @extend_schema_view(
     list=extend_schema(
