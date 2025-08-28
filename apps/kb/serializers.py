@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import KnowledgeBaseArticle
 from apps.issues.serializers import IssueListSerializer
-from apps.users.serializers import UserBriefSerializer
+from apps.issues.serializers import UserBriefSerializer
 
 
 class KnowledgeBaseArticleSerializer(serializers.ModelSerializer):
